@@ -50,8 +50,8 @@
 
 ## Backup & version control
 
-- **GitHub repo** (private): https://github.com/beskromny-dev/beskromnygpt.git — initial push deferred until after new VPS validates working state (digest + bot run successfully end-to-end).
-- `data/` is **never versioned** — regenerate via `scripts/fetch_*.py` and `scripts/load_*.py`. Add `data/` to `.gitignore` before first push (currently only `data/chroma/` is excluded).
+- **GitHub repo** (private): https://github.com/beskromny-dev/beskromnygpt — initial commit pushed 2026-05-01 (commit `701f4cd`, 62 files). Remote uses SSH: `git@github.com:beskromny-dev/beskromnygpt.git`, auth via `~/.ssh/id_ed25519` registered on GitHub account `beskromny-dev`. `gh` CLI is **not** installed locally — use plain `git` for ops.
+- `data/` is **never versioned** (excluded entirely in `.gitignore`) — regenerate via `scripts/fetch_*.py` and `scripts/load_*.py`.
 - Local data backup convention: `~/Desktop/beskromny_data_backup_<YYYY-MM-DD>.zip` containing full `data/` dir (chroma, exports, SQLite DBs). Latest snapshot: `2026-05-01` (59 MB).
 - `feedback.db` and `queue.db` are irreplaceable (no source to regenerate from) — always include in local backups.
 
