@@ -185,6 +185,26 @@ TIER1_SOURCES: list[RSSSource] = [
         category="business",
     ),
 
+    # Newsletters with high signal/noise for absurd-biz + numbers + cultural pulse
+    RSSSource(
+        name="Garbage Day (Ryan Broderick)",
+        url="https://www.garbageday.email",
+        feed_url="https://www.garbageday.email/feed",
+        category="culture",
+    ),
+    RSSSource(
+        name="Platformer (Casey Newton)",
+        url="https://www.platformer.news",
+        feed_url="https://www.platformer.news/feed",
+        category="tech",
+    ),
+    RSSSource(
+        name="Slow Boring (Matt Yglesias)",
+        url="https://www.slowboring.com",
+        feed_url="https://www.slowboring.com/feed",
+        category="business",
+    ),
+
     # ━━━ РОССИЯ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     # Федеральные бизнес-медиа

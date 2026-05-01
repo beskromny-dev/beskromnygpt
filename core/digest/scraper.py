@@ -139,13 +139,72 @@ def fetch_rss(source: RSSSource, max_items: int = 10) -> list[Article]:
 
 
 def fetch_all_rss(max_per_source: int = 8) -> list[Article]:
-    """Fetch all Tier 1 RSS feeds. Returns combined article list."""
+    """Fetch all Tier 1 RSS feeds. Returns combined article list.
+
+    Defensive wrapper: a crash in any single source never aborts the digest.
+    """
     all_articles = []
     for source in TIER1_SOURCES:
-        articles = fetch_rss(source, max_items=max_per_source)
-        all_articles.extend(articles)
-    logger.info("Total Tier 1 articles: %d", len(all_articles))
+        try:
+            articles = fetch_rss(source, max_items=max_per_source)
+            all_articles.extend(articles)
+        except Exception as e:
+            logger.error("Source %s crashed unexpectedly: %s — skipped", source.name, e)
+    logger.info("Total Tier 1 articles: %d (from %d sources)", len(all_articles), len(TIER1_SOURCES))
     return all_articles
+
+
+# ── Hacker News (front-page filtered by quality) ─────────────────
+
+HN_ALGOLIA_URL = "https://hn.algolia.com/api/v1/search"
+
+
+def fetch_hn_top(min_points: int = 200, min_comments: int = 50, max_items: int = 20) -> list[Article]:
+    """Fetch Hacker News front-page stories above a quality threshold.
+
+    Filters by points and comment count to surface stories that actually got
+    serious discussion. Best detector of weird-tech-stories-everyone-is-talking-about.
+
+    Defensive: any failure returns [] without aborting the digest.
+    """
+    try:
+        resp = httpx.get(
+            HN_ALGOLIA_URL,
+            params={
+                "tags": "story",
+                "numericFilters": f"points>={min_points},num_comments>={min_comments}",
+                "hitsPerPage": max_items,
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        logger.error("Hacker News fetch failed: %s — skipped", e)
+        return []
+
+    articles = []
+    for hit in data.get("hits", []):
+        title = hit.get("title")
+        url = hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
+        if not title or not url:
+            continue
+        points = hit.get("points", 0)
+        comments = hit.get("num_comments", 0)
+        hn_link = f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
+        summary = f"({points} points, {comments} comments) HN discussion: {hn_link}"
+        articles.append(Article(
+            title=title,
+            url=url,
+            source="Hacker News",
+            category="tech",
+            summary=summary,
+            published=hit.get("created_at"),
+        ))
+
+    logger.info("Fetched %d Hacker News stories (≥%d pts, ≥%d comments)",
+                len(articles), min_points, min_comments)
+    return articles
 
 
 # ── Web Search (Tier 2) ──────────────────────────────────────────
@@ -249,18 +308,24 @@ def search_web(query: str, max_results: int = 5) -> list[dict]:
 
 
 def fetch_tier2_articles() -> list[Article]:
-    """Run all Tier 2 web searches. Returns articles."""
+    """Run all Tier 2 web searches. Returns articles.
+
+    Defensive wrapper: a crash in any single query never aborts the digest.
+    """
     all_articles = []
     for q in TIER2_SEARCH_QUERIES:
-        results = search_web(q["query"], max_results=4)
-        for r in results:
-            all_articles.append(Article(
-                title=r["title"],
-                url=r["url"],
-                source="web search",
-                category=q["category"],
-                summary=r["snippet"],
-            ))
+        try:
+            results = search_web(q["query"], max_results=4)
+            for r in results:
+                all_articles.append(Article(
+                    title=r["title"],
+                    url=r["url"],
+                    source="web search",
+                    category=q["category"],
+                    summary=r["snippet"],
+                ))
+        except Exception as e:
+            logger.error("Tier 2 query '%s' crashed unexpectedly: %s — skipped", q.get("query", "?"), e)
     logger.info("Total Tier 2 articles: %d", len(all_articles))
     return all_articles
 
@@ -268,10 +333,29 @@ def fetch_tier2_articles() -> list[Article]:
 # ── Combined ──────────────────────────────────────────────────────
 
 def fetch_all_articles() -> list[Article]:
-    """Fetch all articles from Tier 1 + Tier 2."""
-    tier1 = fetch_all_rss()
-    tier2 = fetch_tier2_articles()
-    combined = tier1 + tier2
+    """Fetch all articles from Tier 1 (RSS) + Tier 2 (web search) + Tier 3 (HN).
+
+    Each tier wraps its own errors — a failure in one tier never aborts the others.
+    """
+    try:
+        tier1 = fetch_all_rss()
+    except Exception as e:
+        logger.error("Tier 1 (RSS) layer crashed: %s", e)
+        tier1 = []
+
+    try:
+        tier2 = fetch_tier2_articles()
+    except Exception as e:
+        logger.error("Tier 2 (web search) layer crashed: %s", e)
+        tier2 = []
+
+    try:
+        tier3 = fetch_hn_top()
+    except Exception as e:
+        logger.error("Tier 3 (Hacker News) layer crashed: %s", e)
+        tier3 = []
+
+    combined = tier1 + tier2 + tier3
 
     # Deduplicate by URL
     seen_urls = set()
@@ -281,5 +365,8 @@ def fetch_all_articles() -> list[Article]:
             seen_urls.add(a.url)
             unique.append(a)
 
-    logger.info("Combined unique articles: %d (from %d total)", len(unique), len(combined))
+    logger.info(
+        "Combined unique articles: %d (Tier1=%d, Tier2=%d, Tier3=%d, total=%d)",
+        len(unique), len(tier1), len(tier2), len(tier3), len(combined),
+    )
     return unique
